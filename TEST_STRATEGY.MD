@@ -8,6 +8,26 @@
 
 ---
 
+## 0. Strategic Intent & Discovery
+
+### 0.1 Discovery Questions
+*   **Data Integrity:** How do we validate that the underlying `countries-list` remains the "Source of Truth" during schema transformations?
+*   **Resource Constraints:** What is the maximum query complexity allowable before exceeding the 128MB Cloudflare Worker memory ceiling?
+*   **Consumer Safety:** How can we guarantee zero breaking changes for public consumers using typed clients?
+
+### 0.2 Priority Scenarios (Risk-Based Reasoning)
+1.  **Deeply Nested Relationships:** Stress-tests the 128MB memory limit and validates the efficiency of `@pothos/plugin-dataloader`.
+2.  **Adversarial Filter Injection:** Specifically targets the Sift engine to prevent ReDoS (Regular Expression Denial of Service) and logic bypass.
+3.  **Schema Regression/Snapshots:** Ensures the structural contract remains immutable for public consumers.
+
+### 0.3 Out of Scope & Trade-offs (Transparency)
+*   **Load/Stress Testing:** Conscientiously skipped for the MVP. Reasoning: We are prioritizing logical correctness and security; horizontal scaling is deferred to the Cloudflare Edge infrastructure.
+*   **E2E for All Locales:** Limited to critical paths. Full i18n coverage is handled at the unit level to maintain CI speed.
+
+### 0.4 AI Methodology & Meta-Process (Audit Compliance)
+*   **Engineering Loop:** We utilized Gemini/Claude to identify GraphQL-specific attack vectors (Graph-bombs) and generate adversarial `filter` inputs.
+*   **Refinement:** AI-generated suggestions were manually constrained to align with the specific 128MB memory ceiling and CPU limits of the Cloudflare Worker runtime.
+
 ---
 
 ## 1. Schema Governance & Type Safety
@@ -52,10 +72,9 @@ We employ a **Code-First (Pothos)** approach with **SDL Artifact Generation**.
 ---
 
 ## 2.5 Autonomous & AI-Augmented Testing
-*   **Autonomous Query Fuzzing:** Implement a script that parses the generated SDL to produce 1,000+ random valid GraphQL queries, specifically targeting nested relationships to stress-test the Cloudflare Worker 128MB memory ceiling.
+*   **Autonomous Query Fuzzing:** Implement a script that uses the SDL to generate 1,000+ random valid GraphQL queries to test resolver resilience and memory pressure.
 *   **AI-Generated Edge Cases:** Use Gemini/Claude to generate adversarial `filter` inputs (complex regex, nested logic) to stress-test the Sift engine.
 *   **Synthetic Data Injection:** AI-driven generation of mock subdivision data to test the scalability of the `iso-3166-2` integration.
-*   **Agentic Logic Discovery:** Deploy an LLM-based agent to "crawl" the graph and identify logical anomalies (e.g., checking if `Continent.countries` contains countries that claim to be in a different continent).
 
 ---
 
@@ -73,7 +92,6 @@ We employ a **Code-First (Pothos)** approach with **SDL Artifact Generation**.
 *   **N+1 Prevention (DataLoader):** The `@pothos/plugin-dataloader` is mandated for all relationship resolvers. A `countryLoader` is implemented to batch lookups for `Country` objects by their `code`, transforming N+1 lookups into batched O(1) operations.
 *   **N+1 Detection:** Test cases for deeply nested relationships (e.g., `continent -> countries -> languages`) must assert that the underlying data source (e.g., `countries-list` object) is accessed efficiently (e.g., a single read for batched operations).
 *   **Tracing:** Integration with Stellate or Apollo Studio for distributed tracing to identify slow resolvers and N+1 patterns in production.
-*   **Observability-Driven Testing (ODT):** Periodically ingest top-performing production query shapes into the integration test suite to ensure performance benchmarks reflect actual user behavior.
 
 ---
 
@@ -108,7 +126,6 @@ We employ a **Code-First (Pothos)** approach with **SDL Artifact Generation**.
 - [x] Hardened nullability for external field lookups (Partial Success resilience).
 - [ ] Set up AI-driven autonomous query fuzzing in CI.
 - [ ] Implement Schema Snapshot testing for all top-level Query fields.
-- [ ] Integrate AI-based Semantic Validation for geographic data accuracy.
 - [x] Implement Field-Level Authorization using Pothos scope-auth with API Key context.
 - [x] Implement Query Cost Analysis to prevent fan-out attacks.
 - [ ] Set up GraphQL Code Generator for React/Angular examples.
