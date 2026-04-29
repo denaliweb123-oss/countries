@@ -8,44 +8,44 @@
 
 ## 0. Discovery
 
-### Questions Asked Before Testing
+### 0.1 Questions Asked Before Testing (Prioritized & Graded)
 
-- **Data integrity**: How do we know an upstream package update (`countries-list`, `iso-3166-2`, etc.) silently breaks a resolver transformation (currency split, subdivision filter, empty-string-to-null coercion)?
-  *Answer: We don't — no regression fixtures exist for these transformations. **Gap.***
-
-- **Resource constraints**: At what query complexity does the Worker hit its CPU ceiling? How does nested querying multiply cost?
-  *Answer: No depth or complexity limit is enforced. `Language.countries` × `Continent.countries` produce O(n³) iterations at depth 4. **Gap.***
-
-- **GraphQL Batching Limits**: Is there a hard limit on GraphQL Batching? (`batching: true` in `src/graphql.ts` without a `limit`).
-  *Answer: No limit. An attacker could send hundreds of queries in one request, bypassing depth limits and exhausting Worker memory. **Gap.***
-
-- **Cold Start vs. Warm Performance**: What is the "Cold Start" behavior vs. "Warm" performance? (Large NPM packages like `countries-list` and `i18n-iso-countries` are parsed on every request).
-  *Answer: Unmeasured. This could significantly impact the 10ms–50ms CPU limit on Cloudflare Workers for initial requests. **Gap.***
-
-- **Out-Of-Memory (OOM) Failures**: How do we handle Out-Of-Memory (OOM) failures?
-  *Answer: Unhandled. If a query is too large, the Worker might fail abruptly or leak partial data. **Gap.***
-
-- **Catastrophic Backtracking (ReDoS)**: Are we protected against "Catastrophic Backtracking"? (The `regex` filter in `StringQueryOperatorInput` is a major risk).
+- **[P0 - Critical] Catastrophic Backtracking (ReDoS)**: Are we protected against "Catastrophic Backtracking"? (The `regex` filter in `StringQueryOperatorInput` is a major risk).
   *Answer: Partially addressed with `maxLength` validation, but complex patterns within the limit could still hang the JS isolate. **High Risk.***
 
-- **Introspection in Production**: Is Introspection intentional in Production?
-  *Answer: Yes, currently enabled for public API with playground. Provides a roadmap for attackers. **Risk.***
+- **[P0 - Critical] GraphQL Batching Limits**: Is there a hard limit on GraphQL Batching? (`batching: true` without a `limit`).
+  *Answer: No limit. An attacker could send hundreds of queries in one request, bypassing depth limits and exhausting Worker memory. **Gap.***
 
-- **Query Amplification via Aliases**: How do we prevent "Query Amplification" via Aliases?
-  *Answer: Unaddressed. A user could query the same expensive field multiple times using different aliases in a single request. **Gap.***
+- **[P1 - High] Resource constraints**: At what query complexity does the Worker hit its CPU ceiling? 
+  *Answer: `Language.countries` × `Continent.countries` produce O(n³) iterations at depth 4. No depth/complexity limit enforced yet. **Gap.***
 
-- **Consumer safety**: How many typed clients break silently if a field is removed or nullability changes?
+- **[P1 - High] Consumer Safety**: How many typed clients break silently if a field is removed or nullability changes?
   *Answer: Undetectable pre-production — no schema diffing in CI, no snapshot committed. **Gap.***
 
-- **Nullability Failure Mode**: What is our "Nullability" failure mode? (`defaultFieldNullability: false`).
-  *Answer: If an upstream data source returns `undefined` for a non-nullable field, the entire object (or query) will return `null`. This is an "all-or-nothing" failure. **Design Choice/Risk.***
+- **[P1 - High] Data Integrity**: How do we know an upstream package update silently breaks a resolver transformation?
+  *Answer: We don't — no regression fixtures exist for these transformations. **Gap.***
 
-- **Deprecation Communication**: How do we communicate deprecations? (e.g., `Country.states` is `TODO` for deprecation).
+- **[P2 - Medium] Query Amplification**: How do we prevent "Query Amplification" via Aliases?
+  *Answer: Unaddressed. A user could query the same expensive field multiple times using aliases in a single request. **Gap.***
+
+- **[P2 - Medium] Nullability Failure Mode**: What is our failure mode with `defaultFieldNullability: false`?
+  *Answer: If a source returns `undefined`, the entire object returns `null`. This is an "all-or-nothing" design risk.
+
+- **[P3 - Low] Developer Recommendations**: What do developers recommend paying more attention to?
+  *Answer: Recursive relationship performance and localization fallback logic were flagged by the team as high-complexity areas.*
+
+### 0.2 AI Methodology (Audit Compliance)
+*   **Prompting Strategy:** Utilized Claude 3.5 Sonnet to perform adversarial analysis on the Pothos schema, specifically looking for N+1 vulnerabilities and ReDoS vectors.
+*   **Refinement:** AI suggested a generic complexity plugin; we refined this to a hard **Depth Limit of 7** to specifically fit the Cloudflare Worker 128MB ceiling.
+
+### 0.3 Out of Scope & Trade-offs
+*   **Load Testing:** Skipped this cycle. Reason: Focusing on logical correctness and resource safety. Cloudflare's Edge provides horizontal scale; we are protecting the single-isolate execution limit instead.
+
 ### Priority Scenarios
 
 | # | Scenario | Severity | Why |
 |---|---|---|---|
-| 1 | ReDoS via `regex` filter (`schema.ts:216`) | Critical | User string → `$regex` with no validation. Kills isolate for all users. |
+| 1 | ReDoS via `regex` filter (`schema.ts:216`) | Critical | Direct user string to `$regex` bypasses CPU limits via catastrophic backtracking. |
 | 2 | Unbounded nested traversal | High | No depth limit. O(n³) at depth 4. CPU ceiling hit for entire isolate. |
 | 3 | Silent data regression on package update | High | 5 tests exist; none cover split/coerce/filter resolver logic. |
 | 4 | Breaking schema contract reaches production | High | No `graphql-inspector` diff in CI. No snapshot on `main`. |
@@ -56,6 +56,7 @@
 | Item | Reason | Proxy Signal |
 |---|---|---|
 | Load/stress testing | Infrastructure setup time not available this cycle | Cloudflare Analytics CPU histograms |
+| External Connectivity | Using Countries API as sole target | **Backup API:** `https://rickandmortyapi.com/graphql` (used as a heartbeat to verify CI network state) |
 | Full i18n coverage | Would duplicate `i18n-iso-countries` test suite | Spot-check 3 locales × 5 countries |
 | Mutation/subscription testing | Neither exists in the schema | N/A until added |
 | E2E against live URL | `yoga.fetch` integration tests cover the full stack | Staging smoke tests pre-release |
@@ -223,4 +224,5 @@ Not warranted now (read-only, no auth). Revisit when UI consumers or auth flows 
 - [ ] JSON response fixtures for snapshot regression
 - [ ] `bunx tsc --noEmit` and `bunx eslint .` in CI
 - [ ] N+1 canary test: `languages { countries { code } }` < 100 ms
+- [ ] CI Heartbeat: Connectivity check against Rick and Morty API to isolate network vs. service failures
 - [ ] Staging Worker environment in `wrangler.toml` + smoke test suite
