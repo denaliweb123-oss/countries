@@ -28,6 +28,9 @@
 - **[P2 - Medium] Query Amplification**: How do we prevent "Query Amplification" via Aliases?
   *Answer: Unaddressed. A user could query the same expensive field multiple times using aliases in a single request. **Gap.***
 
+- **[P2 - Medium] Performance Testing Feasibility**: What are the practical limitations or constraints for conducting comprehensive load/performance testing on this Cloudflare Worker setup?
+  *Answer: Limited by Cloudflare Workers' ephemeral nature and lack of dedicated load testing infrastructure in this cycle. Focus is on single-request performance and resource limits, not sustained high throughput. **Constraint.***
+
 - **[P2 - Medium] Nullability Failure Mode**: What is our failure mode with `defaultFieldNullability: false`?
   *Answer: If a source returns `undefined`, the entire object returns `null`. This is an "all-or-nothing" design risk.
 
@@ -97,11 +100,13 @@
 
 ### Integration — Schema-Driven (5 tests today)
 
-Covered: `countries` filtering (`eq`, `in`, `regex`), all-countries count, GB subdivisions.
+Covered: `countries` filtering (`code`, `name` via `eq`, `in`, `regex`), all-countries count, GB subdivisions.
 
-Critical gaps: `continent`/`language` queries, `null` returns, localization, nullable fields (`capital` of AQ), `ne`/`nin` operators, split fields (`currencies`, `phones`), batched request.
+Critical gaps: `continent`/`language` queries, `null` returns, localization, nullable fields (`capital` of AQ, empty `states` arrays), `ne`/`nin` operators, split fields (`currencies`, `phones`), batched request.
 
-**Snapshot testing:** No built-in support in Bun. Commit JSON fixtures, assert `deepEqual`.
+**Specific Filters to Test:**
+- `countries(filter: { continent: { eq: "EU" } })`
+- `countries(filter: { currency: { in: ["USD", "EUR"] } })`
 
 ### Contract Testing
 
